@@ -2,6 +2,8 @@
 
 A DeepSeek Harness Web plugin that keeps a searchable history of text copied in the DSH Web app and in other applications.
 
+![The clipboard history panel](assets/screenshot-1.png)
+
 ## What it does
 
 - Adds a **Clipboard history** button beside **Settings** at the sidebar foot (icon only when the sidebar is collapsed).
