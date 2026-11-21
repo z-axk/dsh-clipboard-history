@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Clipboard history",
-    "description": "Adds a clipboard history button beside Settings at the sidebar foot. Open the panel to search text you copied inside the DSH Web app, click an entry to copy it again, and pin or delete entries. History is stored only in this browser, keeps up to 200 entries, and does not capture copies made in other apps."
+    "description": "Adds a clipboard history button beside Settings at the sidebar foot. Open the panel to search text you copied in the DSH Web app or any other application, click an entry to copy it again, and pin or delete entries. Copies made in other apps are picked up while DeepSeek Harness runs; a pause button stops recording. History is stored only in this browser and keeps up to 200 entries."
   }
 }

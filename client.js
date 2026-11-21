@@ -10,6 +10,9 @@ window.__ModuleLoader__.load({
     const MAX_TEXT_LENGTH = 20000;
     const CONFIRM_CLEAR_MS = 3000;
     const NOTICE_MS = 2200;
+    const PAUSE_KEY = 'dsh.clipboard-history.paused';
+    const SYNC_ROUTE = '/dsh-clipboard-history/latest';
+    const SYNC_INTERVAL_MS = 1500;
 
     const ZH = {
       title: '剪贴板历史',
@@ -29,7 +32,10 @@ window.__ModuleLoader__.load({
       count: '条',
       countOne: '条',
       confirmDelete: '确认删除',
-      hint: '仅保存在当前浏览器 · 最多 200 条',
+      pauseCapture: '暂停记录',
+      resumeCapture: '恢复记录',
+      pausedHint: '已暂停记录',
+      hint: '保存在当前浏览器 · 最多 200 条 · 其他应用复制的文字会自动收录',
     };
 
     const DICTS = {
@@ -51,7 +57,10 @@ window.__ModuleLoader__.load({
         count: 'entries',
         countOne: 'entry',
         confirmDelete: 'Confirm delete',
-        hint: 'Saved in this browser only · up to 200 entries',
+        pauseCapture: 'Pause recording',
+        resumeCapture: 'Resume recording',
+        pausedHint: 'Recording paused',
+        hint: 'Saved in this browser · up to 200 entries · text copied in other apps is captured too',
       },
       zh: ZH,
       'zh-CN': ZH,
@@ -172,6 +181,14 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function readPaused() {
+      try {
+        return window.localStorage.getItem(PAUSE_KEY) === '1';
+      } catch (error) {
+        return false;
+      }
+    }
+
     function readStoredEntries() {
       try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -222,6 +239,7 @@ window.__ModuleLoader__.load({
     function createStore() {
       let entries = readStoredEntries();
       let open = false;
+      let paused = readPaused();
       const listeners = new Set();
 
       function emit() {
@@ -258,6 +276,20 @@ window.__ModuleLoader__.load({
         isOpen() {
           return open;
         },
+        isPaused() {
+          return paused;
+        },
+        setPaused(next) {
+          const value = next === true;
+          if (paused === value) return;
+          paused = value;
+          try {
+            window.localStorage.setItem(PAUSE_KEY, value ? '1' : '0');
+          } catch (error) {
+            /* the pause preference is best effort */
+          }
+          emit();
+        },
         setOpen(next) {
           const value = next === true;
           if (open === value) return;
@@ -270,14 +302,14 @@ window.__ModuleLoader__.load({
             listeners.delete(listener);
           };
         },
-        add(raw) {
+        add(raw, timestamp) {
           if (typeof raw !== 'string') return;
           const text = raw.replace(/\r\n/g, '\n').trim().slice(0, MAX_TEXT_LENGTH);
           if (!text) return;
-          const now = Date.now();
+          const now = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : Date.now();
           const existing = entries.find((entry) => entry.text === text);
           if (existing) {
-            existing.ts = now;
+            existing.ts = Math.max(now, existing.ts);
             entries = [existing].concat(entries.filter((entry) => entry !== existing));
           } else {
             entries = [{ id: makeId(), text, ts: now, pinned: false }].concat(entries);
@@ -343,6 +375,7 @@ window.__ModuleLoader__.load({
               text = '';
             }
             if (!text) text = readSelectionText();
+            if (store.isPaused()) return;
             store.add(text);
           };
           document.addEventListener('copy', onCopy);
@@ -363,6 +396,7 @@ window.__ModuleLoader__.load({
                   return result;
                 }
                 const record = () => {
+                  if (store.isPaused()) return;
                   try {
                     store.add(text);
                   } catch (error) {
@@ -414,6 +448,67 @@ window.__ModuleLoader__.load({
           };
         });
 
+        let lastRemoteTs = 0;
+        let routeAvailable = true;
+
+        async function readSystemClipboard() {
+          if (store.isPaused()) return;
+          try {
+            const text = await navigator.clipboard.readText();
+            if (text && text.trim()) store.add(text);
+          } catch (error) {
+            /* the browser may refuse clipboard reads without focus or permission */
+          }
+        }
+
+        async function pullSystemClipboard() {
+          const pausedNow = store.isPaused();
+          try {
+            const response = await fetch(
+              SYNC_ROUTE + '?since=' + lastRemoteTs + '&paused=' + (pausedNow ? '1' : '0'),
+              { headers: { accept: 'application/json' }, cache: 'no-store' }
+            );
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            routeAvailable = true;
+            const payload = await response.json();
+            if (pausedNow) return;
+            const list = payload && Array.isArray(payload.entries) ? payload.entries : [];
+            for (let i = 0; i < list.length; i += 1) {
+              const item = list[i];
+              if (!item || typeof item.text !== 'string') continue;
+              if (typeof item.ts === 'number' && item.ts > lastRemoteTs) lastRemoteTs = item.ts;
+              store.add(item.text, item.ts);
+            }
+          } catch (error) {
+            routeAvailable = false;
+          }
+        }
+
+        async function refreshFromSystemClipboard() {
+          await pullSystemClipboard();
+          if (!routeAvailable) await readSystemClipboard();
+        }
+
+        ctx.effect(() => {
+          const stopInterval = timer.interval(() => {
+            if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+            void pullSystemClipboard();
+          }, SYNC_INTERVAL_MS);
+          const onFocus = () => {
+            void refreshFromSystemClipboard();
+          };
+          const onVisibility = () => {
+            if (document.visibilityState === 'visible') void refreshFromSystemClipboard();
+          };
+          window.addEventListener('focus', onFocus);
+          document.addEventListener('visibilitychange', onVisibility);
+          return () => {
+            stopInterval();
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onVisibility);
+          };
+        });
+
         function useEntries() {
           const [entries, setEntries] = React.useState(() => store.getEntries());
           React.useEffect(() => store.subscribe(() => setEntries(store.getEntries())), []);
@@ -430,6 +525,12 @@ window.__ModuleLoader__.load({
           const [snapshot, setSnapshot] = React.useState(() => locale.getSnapshot());
           React.useEffect(() => locale.subscribe(() => setSnapshot(locale.getSnapshot())), []);
           return snapshot;
+        }
+
+        function usePaused() {
+          const [paused, setPausedState] = React.useState(() => store.isPaused());
+          React.useEffect(() => store.subscribe(() => setPausedState(store.isPaused())), []);
+          return paused;
         }
 
         function ClipboardIcon(props) {
@@ -482,6 +583,23 @@ window.__ModuleLoader__.load({
           );
         }
 
+        function PauseIcon() {
+          return h('svg', {
+            width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': 'true',
+          },
+            h('rect', { x: 7, y: 5.5, width: 3.4, height: 13, rx: 1.2, fill: 'currentColor' }),
+            h('rect', { x: 13.6, y: 5.5, width: 3.4, height: 13, rx: 1.2, fill: 'currentColor' })
+          );
+        }
+
+        function PlayIcon() {
+          return h('svg', {
+            width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': 'true',
+          },
+            h('path', { d: 'M8 5.5v13l10-6.5-10-6.5z', fill: 'currentColor' })
+          );
+        }
+
         function StyleTag() {
           return h('style', { key: 'dshclip-styles', 'data-dsh-plugin': 'clipboard-history' }, CSS);
         }
@@ -512,6 +630,7 @@ window.__ModuleLoader__.load({
         function Panel() {
           const entries = useEntries();
           const open = useOpen();
+          const paused = usePaused();
           const localeSnapshot = useLocale();
           const [query, setQuery] = React.useState('');
           const [confirmClear, setConfirmClear] = React.useState(false);
@@ -759,6 +878,16 @@ window.__ModuleLoader__.load({
               ),
               h('button', {
                 type: 'button',
+                className: paused
+                  ? 'dshclip-icon-button dshclip-icon-button-active'
+                  : 'dshclip-icon-button',
+                title: paused ? t('resumeCapture') : t('pauseCapture'),
+                'aria-label': paused ? t('resumeCapture') : t('pauseCapture'),
+                'aria-pressed': paused,
+                onClick: () => store.setPaused(!store.isPaused()),
+              }, paused ? h(PlayIcon, null) : h(PauseIcon, null)),
+              h('button', {
+                type: 'button',
                 className: confirmClear
                   ? 'dshclip-text-button dshclip-text-button-danger'
                   : 'dshclip-text-button',
@@ -787,7 +916,9 @@ window.__ModuleLoader__.load({
                 ? h('span', {
                   className: notice.ok ? 'dshclip-notice' : 'dshclip-notice dshclip-notice-error',
                 }, notice.message)
-                : h('span', { className: 'dshclip-hint' }, t('hint'))
+                : paused
+                  ? h('span', { className: 'dshclip-hint' }, t('pausedHint'))
+                  : h('span', { className: 'dshclip-hint' }, t('hint'))
             )
           );
         }
