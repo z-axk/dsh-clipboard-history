@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Clipboard history",
+    "description": "Adds a clipboard history button beside Settings at the sidebar foot. Open the panel to search text you copied inside the DSH Web app, click an entry to copy it again, and pin or delete entries. History is stored only in this browser, keeps up to 200 entries, and does not capture copies made in other apps."
+  }
+}

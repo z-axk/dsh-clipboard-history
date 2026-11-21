@@ -1,0 +1,3 @@
+- insert:
+    - id: clipboard-history
+      name: '@local/clipboard-history'
