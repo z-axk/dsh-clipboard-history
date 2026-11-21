@@ -1,9 +1,23 @@
 {
   "name": "@local/clipboard-history",
   "version": "1.1.0",
-  "private": true,
   "type": "module",
-  "description": "Keeps a searchable history of text copied inside the DSH Web app",
+  "description": "Searchable clipboard history for DeepSeek Harness: records text copied in the Web app and, on Windows, text copied in other applications while DSH runs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/z-axk/dsh-clipboard-history.git"
+  },
+  "homepage": "https://github.com/z-axk/dsh-clipboard-history#readme",
+  "bugs": {
+    "url": "https://github.com/z-axk/dsh-clipboard-history/issues"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "clipboard",
+    "clipboard-history",
+    "productivity"
+  ],
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -17,7 +31,8 @@
     "locale/en.json",
     "locale/zh.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
