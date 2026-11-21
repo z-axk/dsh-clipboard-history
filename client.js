@@ -853,10 +853,18 @@ window.__ModuleLoader__.load({
 
           const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
           const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight;
+          const panelWidth = Math.min(380, Math.max(240, viewportWidth - 24));
+          const panelMaxHeight = Math.min(560, Math.max(200, viewportHeight - 16));
+          const panelTop = Math.max(
+            8,
+            Math.min(anchor ? anchor.top - panelMaxHeight - 8 : 8, viewportHeight - panelMaxHeight - 8),
+          );
           const panelStyle = anchor
             ? {
-              left: Math.max(8, Math.min(anchor.left, viewportWidth - 388)) + 'px',
-              bottom: Math.max(8, viewportHeight - anchor.top + 8) + 'px',
+              left: Math.max(8, Math.min(anchor.left, viewportWidth - panelWidth - 8)) + 'px',
+              top: panelTop + 'px',
+              bottom: 'auto',
+              maxHeight: panelMaxHeight + 'px',
             }
             : undefined;
 
